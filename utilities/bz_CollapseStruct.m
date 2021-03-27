@@ -50,22 +50,30 @@ for ff = 1:length(fields)
         %bz_Matchfields
        %structout.(currentfield) = cat(1,structin(:).(currentfield));
        structout.(currentfield) = bz_Matchfields({structin(:).(currentfield)},[],'remove');
+       try
        structout.(currentfield) = bz_CollapseStruct(structout.(currentfield),dim,combine,true);
+       catch
+           keyboard
+       end
        continue
     elseif iscell(structin(1).(currentfield)) & NEST %For cell array in field
-            if strcmp(dim,'match')
-                catdim = bz_FindCatableDims({structin(:).(currentfield)});
-                if length(catdim)>1
-                    catdim = catdim(1); %Change this to be the largest dimension
-                end
-            else
-                catdim = dim;
+        if strcmp(dim,'match')
+            catdim = bz_FindCatableDims({structin(:).(currentfield)});
+            if length(catdim)>1
+                catdim = catdim(1); %Change this to be the largest dimension
             end
-        structout.(currentfield) = cat(catdim,structin(:).(currentfield));
+        else
+            catdim = dim;
+        end
+        try
+            structout.(currentfield) = cat(catdim,structin(:).(currentfield));
+        catch
+            display(['Failed to concatenate field ',currentfield])
+        end
     elseif (isstring(structin(1).(currentfield))||ischar(structin(1).(currentfield))) & NEST %For string in field
         structout.(currentfield) = {structin(:).(currentfield)};
     else %For simple array in field
-        %try
+        try
             %Concatenate Array
             if strcmp(dim,'match')
                 catdim = bz_FindCatableDims({structin(:).(currentfield)});
@@ -73,14 +81,20 @@ for ff = 1:length(fields)
                 catdim = dim;
             end
         structout.(currentfield) = cat(catdim(1),structin(:).(currentfield));
-%         catch
+        catch
+             display(['Failed to concatenate field ',currentfield])
 %            keyboard
 %             continue
-%         end
+         end
 	end
 
     
-    
+        if ~exist('structout','var')
+            structout = [];
+            continue
+        elseif ~isfield(structout,currentfield)
+            continue
+        end
     switch combine
         case 'mean'
             structout.(currentfield) = nanmean(structout.(currentfield),catdim);

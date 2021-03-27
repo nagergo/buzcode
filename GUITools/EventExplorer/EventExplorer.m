@@ -1,4 +1,4 @@
-function [ EventDetectionReview ] = EventExplorer(basePath,events )
+function [ EventDetectionReview ] = EventExplorer(basePath,events,varargin )
 %EventExplorer is a GUI tool for exploring buzcode events and states files.
 %
 %INPUT
@@ -14,6 +14,10 @@ function [ EventDetectionReview ] = EventExplorer(basePath,events )
 %                   
 %   basePath    basePath that holds baseName.lfp (default: pwd)
 %
+%(options)
+%   'useSpikes' true,false,'MUA'
+%   'noPrompts' default: true
+%
 %OUTPUT
 %   EventDetectionReview    results of DetectionReview - if called with an
 %                           output, automatically runs detection review
@@ -22,6 +26,17 @@ function [ EventDetectionReview ] = EventExplorer(basePath,events )
 %% (For development)
 % events = 'SlowWaves';
 % basePath = '/Users/dlevenstein/Dropbox/Research/Datasets/20140526_277um';
+%%
+p = inputParser;
+addParameter(p,'useSpikes',false);
+addParameter(p,'noPrompts',true,@islogical);
+
+parse(p,varargin{:})
+noPrompts = p.Results.noPrompts;
+useSpikes = p.Results.useSpikes;
+
+
+
 %%
 if ~exist('basePath','var')
     basePath = pwd;
@@ -134,12 +149,23 @@ try
 catch
     FO.lookatchannel = inputdlg(['No events.detectorinfo.detectionchannel found in events.mat...',...
         'Which LFP channel would you like to look at?']);
+    if isempty(FO.lookatchannel)
+        return
+    end
     FO.lookatchannel = str2num(FO.lookatchannel{1});
 end
    
 %Load the LFP and spikes
-FO.data.lfp = bz_GetLFP(FO.lookatchannel,'basepath',FO.basePath);
-FO.data.spikes = bz_GetSpikes('basepath',FO.basePath);
+FO.data.lfp = bz_GetLFP(FO.lookatchannel,'basepath',FO.basePath,'noPrompts',true);
+switch useSpikes
+    case true
+        FO.data.spikes = bz_GetSpikes('basepath',FO.basePath);
+    case false
+        FO.data.spikes = [];
+    case 'MUA'
+        MUA = MUAfromDat(basePath,'saveMat',true);
+        FO.data.spikes = MUA.peaks;
+end
 %% Set up the EventExplorer Window
 %Position for the main interface
 posvar = get(0,'Screensize');
@@ -184,6 +210,9 @@ FO.SignalPanel = uipanel('FontSize',12,...
     winsizetext = uicontrol('Parent',FO.SignalPanel,...
         'Position',[150 70 80 18],'style','text',...
         'string','LFP Channel:','HorizontalAlignment','left'); 
+    loadbehavior = uicontrol('Parent',FO.SignalPanel,...
+        'Position',[230 90 50 25],'String','Load Behavior',...
+         'Callback',@LoadBeh);
 
 
 %Set up the navigation panel
@@ -514,6 +543,26 @@ function ChangeLFPChan(obj,event)
     EventVewPlot;
 end
 
+function LoadBeh(obj,event)
+    FO = guidata(obj);
+    FO.lookatchannel=str2num(obj.String);
+    if isfield(FO,'behavior')
+        numbeh = length(FO.behavior);
+        FO.behavior{numbeh+1} = bz_LoadBehavior(FO.basePath);
+    else
+        numbeh = 0;
+        FO.behavior{1} = bz_LoadBehavior(FO.basePath);
+    end
+    if ~isfield(FO.behavior{numbeh+1},'data')
+        hasfields = fieldnames(FO.behavior{numbeh+1});
+        [s,v] = listdlg('PromptString','Which field is your data?',...
+                     'ListString',hasfields,'SelectionMode','single');
+        FO.behavior{numbeh+1}.data = FO.behavior{numbeh+1}.(hasfields{s});
+    end
+    guidata(FO.fig, FO);
+    EventVewPlot;
+end
+
 function CloseDialog(obj,event)
 FO = guidata(obj);
     if isfield(FO,'eventsfilename') && isfield(FO,'FlagsAndComments')
@@ -538,7 +587,11 @@ FO = guidata(obj);
         %Save the General EventExplorer metadata file
         if isfield(FO,'FlagsAndComments')
             EventExplorer.FlagsAndComments = FO.FlagsAndComments.timepoint;
-            save(FO.EEbuzcodefilename,'EventExplorer')
+            try
+                save(FO.EEbuzcodefilename,'EventExplorer')
+            catch
+                disp('unable to save Flags and Comments')
+            end
         end
     end
 delete(FO.fig)
